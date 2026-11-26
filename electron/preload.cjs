@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('desktop', {
   saveDesign:(key,data)=>ipcRenderer.invoke('save-design',key,data),
   loadLibrary:()=>ipcRenderer.invoke('load-library'),
   saveLibrary:data=>ipcRenderer.invoke('save-library',data),
+  exportPdf:payload=>ipcRenderer.invoke('export-pdf',payload),
   exportCad:payload=>ipcRenderer.invoke('export-cad',payload),
   finishClose:()=>ipcRenderer.invoke('finish-close'),
   onDrawing: callback => subscribe('drawing', callback),

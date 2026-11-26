@@ -5,6 +5,7 @@ const { pathToFileURL } = require('node:url');
 const { isDrawing, readDrawing:readSource } = require('./files.cjs');
 const { DesignStorage } = require('./design-storage.cjs');
 const {saveCadExport,sourceBuffer}=require('./cad-export.cjs');
+const {savePdf,pdfBytes}=require('./pdf-save.cjs');
 const openedFiles=new Set();
 async function readDrawing(file){const data=await readSource(file);openedFiles.add(await fs.realpath(file));return data;}
 
@@ -22,7 +23,7 @@ async function deliverFile(file) {
   catch (error) { win.webContents.send('file-error', error.message); }
 }
 async function chooseFile() {
-  const result = await dialog.showOpenDialog(win, { title: 'Otwórz rysunek', properties: ['openFile'], filters: [{ name: 'Rysunki CAD', extensions: ['dwg', 'dxf'] }] });
+  const result = await dialog.showOpenDialog(win, { title: 'Otwórz rysunek', properties: ['openFile'], filters: [{ name: 'Rysunki CAD i PDF', extensions: ['dwg', 'dxf', 'pdf'] }] });
   if (result.canceled) return null;
   return readDrawing(result.filePaths[0]);
 }
@@ -64,6 +65,10 @@ app.whenReady().then(async () => {
       return {...await saveCadExport(result.filePath,payload),fileName:path.basename(result.filePath)};
     }finally{exporting=false;}
   });
+  ipcMain.handle('export-pdf',async(event,payload)=>{
+    trusted(event);if(exporting)throw new Error('Zapis jest już w toku.');pdfBytes(payload?.bytes);pdfBytes(payload?.sourceBytes);if(typeof payload.name!=='string'||!payload.name.toLowerCase().endsWith('.pdf'))throw new Error('Nieprawidłowa nazwa PDF.');exporting=true;
+    try{const result=await dialog.showSaveDialog(win,{title:'Zapisz PDF z naniesionymi elementami',defaultPath:path.basename(payload.name,'.pdf')+'_projekt.pdf',filters:[{name:'PDF',extensions:['pdf']}]});if(result.canceled)return null;if(path.extname(result.filePath).toLowerCase()!=='.pdf')throw new Error('Nazwa musi kończyć się na .pdf');return await savePdf(result.filePath,payload,openedFiles);}finally{exporting=false;}
+  });
   ipcMain.handle('finish-close',event=>{trusted(event);if(quitting)app.quit();else win.close();});
   ipcMain.handle('ready', (event) => { trusted(event); ready = true; if (pendingFile) { const file = pendingFile; pendingFile = null; deliverFile(file); } });
   ipcMain.handle('save-csv', async (event, csv) => {
@@ -87,12 +92,12 @@ app.whenReady().then(async () => {
   const action = name => win?.webContents.send('action', name);
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     { label: 'DWG Desk', submenu: [{ role: 'about', label: 'O programie DWG Desk' }, { type: 'separator' }, { role: 'hide', label: 'Ukryj DWG Desk' }, { role: 'quit', label: 'Zakończ DWG Desk' }] },
-    { label: 'Plik', submenu: [{ label: 'Otwórz rysunek…', accelerator: 'CmdOrCtrl+O', click: async () => { if (!win) createWindow(); try { const data = await chooseFile(); if (data) win.webContents.send('drawing', data); } catch (error) { win.webContents.send('file-error', error.message); } } }, {label:'Zapisz rysunek DWG / DXF…',accelerator:'CmdOrCtrl+S',click:()=>action('export-cad')}, {label:'Zapisz projekt lokalnie',click:()=>action('save-design')}, { label: 'Eksportuj pomiary…', click: () => action('export') }, { type: 'separator' }, { role: 'close', label: 'Zamknij okno' }] },
+    { label: 'Plik', submenu: [{ label: 'Otwórz rysunek…', accelerator: 'CmdOrCtrl+O', click: async () => { if (!win) createWindow(); try { const data = await chooseFile(); if (data) win.webContents.send('drawing', data); } catch (error) { win.webContents.send('file-error', error.message); } } }, {label:'Zapisz rysunek DWG / DXF / PDF…',accelerator:'CmdOrCtrl+S',click:()=>action('export-cad')}, {label:'Zapisz projekt lokalnie',click:()=>action('save-design')}, { label: 'Eksportuj pomiary…', click: () => action('export') }, { type: 'separator' }, { role: 'close', label: 'Zamknij okno' }] },
     { label: 'Edycja', submenu: [{ role: 'copy', label: 'Kopiuj' }, { role: 'selectAll', label: 'Zaznacz wszystko' }] },
     { label: 'Widok', submenu: [{ label: 'Dopasuj rysunek (F)', click: () => action('fit') }, { label: 'Pomiar odległości (M)', click: () => action('measure') }, { type: 'separator' }, { role: 'togglefullscreen', label: 'Pełny ekran' }] },
     { label: 'Okno', submenu: [{ role: 'minimize', label: 'Minimalizuj' }, { role: 'zoom', label: 'Powiększ' }] }
   ]));
-  app.setAboutPanelOptions({ applicationName: 'DWG Desk', applicationVersion: '1.3.3', copyright: 'Lokalny podgląd DWG / DXF • AGPL-3.0-only', credits: 'Silnik: @flyfish-dev/cad-viewer, LibreDWG / mlightcad. Pomiar w płaszczyźnie XY. Źródła i licencje dołączone do wydania.' });
+  app.setAboutPanelOptions({ applicationName: 'DWG Desk', applicationVersion: '1.4.0', copyright: 'Lokalny podgląd DWG / DXF • AGPL-3.0-only', credits: 'Silnik: @flyfish-dev/cad-viewer, LibreDWG / mlightcad. Pomiar w płaszczyźnie XY. Źródła i licencje dołączone do wydania.' });
   createWindow();
   app.on('activate', () => { if (!win) createWindow(); });
 });

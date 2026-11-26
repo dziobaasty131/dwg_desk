@@ -16,12 +16,12 @@ Minimalna wersja systemu nie oznacza, że wykonano testy na każdym wydaniu macO
 
 ## Instalacja z DMG
 
-1. Otwórz `DWG-Desk-1.3.3-mac-arm64.dmg`.
+1. Otwórz `DWG-Desk-1.4.0-mac-arm64.dmg`.
 2. Przeciągnij **DWG Desk** do folderu **Aplikacje**.
 3. Uruchom aplikację z folderu Aplikacje.
 4. Otwórz rysunek lub skorzystaj z przykładu dostępnego na ekranie startowym.
 
-Alternatywnie rozpakuj archiwum aplikacji `DWG-Desk-1.3.3-mac-arm64.zip` i przenieś `DWG Desk.app` do Aplikacji. Archiwum źródeł ma inną zawartość — uruchamia się je według [instrukcji dla programistów](development.md).
+Alternatywnie rozpakuj archiwum aplikacji `DWG-Desk-1.4.0-mac-arm64.zip` i przenieś `DWG Desk.app` do Aplikacji. Archiwum źródeł ma inną zawartość — uruchamia się je według [instrukcji dla programistów](development.md).
 
 Aplikacja jest podpisana ad hoc, bez certyfikatu Apple Developer ID i notaryzacji. macOS może zablokować pierwsze uruchomienie pobranej kopii. Jeśli znasz pochodzenie paczki, użyj **Ustawienia systemowe → Prywatność i ochrona → Otwórz mimo to**. Nie wyłączaj globalnie Gatekeepera.
 
@@ -50,3 +50,5 @@ Konwerter ma osobną licencję. Nie jest potrzebny do otwierania rysunków, pomi
 Podmiana aplikacji nie usuwa biblioteki i nakładek, które są zapisane w danych użytkownika. Przed aktualizacją możesz wykonać [kopię folderu `designs`](data-and-export.md#kopia-zapasowa).
 
 Program nie ma automatycznych aktualizacji przez internet.
+
+Odczyt, projektowanie i zapis PDF działają bez ODA File Converter. Wszystkie biblioteki i fonty PDF są dołączone do instalatora.

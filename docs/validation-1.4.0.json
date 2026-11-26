@@ -1,0 +1,50 @@
+{
+  "product": "DWG Desk",
+  "version": "1.4.0",
+  "platform": "macOS arm64",
+  "testedAt": "2026-11-26T11:38:26.664975+00:00",
+  "unitTests": {
+    "passed": 37,
+    "failed": 0
+  },
+  "packagedGuiChecks": {
+    "passed": 15,
+    "failed": 0
+  },
+  "scope": "Local PDF underlays, vector and rotated/cropped scanned pages, per-page calibration and overlays, measurements, camera editing, cable flags, full-document PDF export, source protection and reopening; existing DWG and DXF read paths. Synthetic PDF fixture contains no customer data.",
+  "suites": {
+    "pdf": {
+      "version": "1.4.0",
+      "checks": [
+        "Open a local PDF with pages and no assumed drawing scale",
+        "Calibrate a 200-point reference segment to 10 metres",
+        "PDF zoom and middle-button panning preserve geometry and stop on release",
+        "Existing multi-segment measurements use calibrated PDF units",
+        "Draw cables with length flags and place named cameras on PDF",
+        "Rotated and cropped scanned page opens with independent overlays and scale",
+        "Set a printed scale and add Polish text on a scanned PDF",
+        "Page navigation restores saved calibration and correct page objects",
+        "Cmd+S saves all PDF pages with their installation overlays",
+        "Saved PDF reopens as a self-contained document without local project data",
+        "Reopening the original PDF restores the editable project",
+        "Export cannot overwrite the original PDF",
+        "Cancelling PDF save preserves the editable project",
+        "Switching back to CAD restores its original controls",
+        "Existing DWG reader still opens native CAD geometry"
+      ],
+      "errors": []
+    }
+  },
+  "independentPdfChecks": {
+    "pypdf": "Two pages, page rotation/crop and Polish exported labels confirmed",
+    "poppler": "Both exported pages rendered and visually inspected; cable alignment, camera, flag, Polish text and rotated scan checked"
+  },
+  "artifactChecks": {
+    "adHocSignature": "passed",
+    "dmgChecksum": "passed"
+  },
+  "limitations": [
+    "Full DWG/DXF export regression could not run because ODA File Converter was not installed. Previous 1.3.3 export verification is historical, not a 1.4.0 result.",
+    "No phone, Intel Mac or exhaustive arbitrary PDF compatibility test."
+  ]
+}

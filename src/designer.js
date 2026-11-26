@@ -18,7 +18,7 @@ export class Designer {
   get dirty(){return this.revision!==this.savedRevision;}
   get hasDraft(){return this.draft.length>0||Boolean(this.drag);}
   installPanel(){
-    $('design-panel').innerHTML=`<div class="design-panel-heading"><span class="eyebrow">WARSTWY ROBOCZE DWG DESK</span><h2>Projekt instalacji</h2><p class="microcopy">Projekt zapisuje się automatycznie na tym Macu. Aby otworzyć go w innym programie, użyj „Zapisz DWG / DXF”.</p></div>
+    $('design-panel').innerHTML=`<div class="design-panel-heading"><span class="eyebrow">WARSTWY ROBOCZE DWG DESK</span><h2>Projekt instalacji</h2><p class="microcopy">Projekt zapisuje się automatycznie na tym Macu. Aby otworzyć go w innym programie, użyj przycisku zapisu pliku na górnym pasku.</p></div>
     <button id="open-library" class="outline">Biblioteka symboli i kabli</button>
     <label class="field-label">Aktywna warstwa<select id="active-layer"></select></label>
     <div id="placement-settings"><label class="field-label">Typ kabla<select id="cable-preset"></select></label><label class="field-label">Symbol<select id="symbol-preset"></select></label></div>

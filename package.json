@@ -1,7 +1,7 @@
 {
   "name": "dwg-desk",
-  "version": "1.3.3",
-  "description": "Lokalna przegl\u0105darka DWG i DXF z pomiarem odleg\u0142o\u015bci dla macOS",
+  "version": "1.4.0",
+  "description": "Lokalny podgląd DWG, DXF i PDF z pomiarami i projektowaniem instalacji na macOS",
   "author": "DWG Desk",
   "license": "AGPL-3.0-only",
   "private": true,
@@ -17,7 +17,8 @@
     "test:design": "node scripts/design-smoke.mjs",
     "test:camera": "node scripts/camera-smoke.mjs",
     "test:export": "node scripts/export-smoke.mjs",
-    "test:colors": "node scripts/color-smoke.mjs"
+    "test:colors": "node scripts/color-smoke.mjs",
+    "test:pdf": "node scripts/pdf-smoke.mjs"
   },
   "build": {
     "appId": "local.dwgdesk.viewer",
@@ -50,7 +51,8 @@
       {
         "ext": [
           "dwg",
-          "dxf"
+          "dxf",
+          "pdf"
         ],
         "name": "Rysunek CAD",
         "role": "Viewer"
@@ -58,7 +60,11 @@
     ]
   },
   "dependencies": {
-    "@flyfish-dev/cad-viewer": "0.8.3"
+    "@flyfish-dev/cad-viewer": "0.8.3",
+    "@pdf-lib/fontkit": "1.1.1",
+    "dejavu-fonts-ttf": "2.37.3",
+    "pdf-lib": "1.17.1",
+    "pdfjs-dist": "6.5.438"
   },
   "devDependencies": {
     "electron": "44.8.0",

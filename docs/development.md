@@ -105,3 +105,9 @@ Pliki `test/fixtures/Line-2000.dwg`, `Line-2018.dwg` i `TS1-2000.dwg` pochodzą 
 W 1.3.3 testy eksportu obejmują również wybór kolorów na białe tło, grubości CAD, szerokości polilinii i ich zachowanie po konwersji DWG → DXF. Wyniki: [raport 1.3.3](validation-1.3.3.json).
 
 Parametry DXF opierają się na dokumentacji Autodesk: [grubość encji, kod 370](https://help.autodesk.com/cloudhelp/2024/ENU/AutoCAD-DXF/files/GUID-3610039E-27D1-4E23-B6D3-7E60B22BB5BD.htm), [szerokość LWPOLYLINE, kod 43](https://help.autodesk.com/cloudhelp/2020/ENU/AutoCAD-DXF/files/GUID-748FC305-F3F2-4F74-825A-61F04D757A50.htm) i [zmienne nagłówka](https://help.autodesk.com/cloudhelp/2023/ENU/AutoCAD-DXF/files/GUID-A85E8E67-27CD-4C59-BE61-4DC9FADBE74A.htm).
+
+## PDF (1.4.0)
+
+`npm run test:pdf` sprawdza odczyt stron, kalibrację, pomiary, kable i kamery, zapis PDF, polskie znaki, niezależność stron i ochronę źródła. `DWG_DESK_APP` wskazuje gotową paczkę do acceptance. `test/fixtures/pdf-plan.pdf` jest syntetycznym rysunkiem testowym projektu, bez danych klienta.
+
+Odczyt: PDF.js z lokalnym workerem, cmaps, fontami i WASM (`scripts/prepare.mjs`). Podgląd strony leży we współrzędnych strony w punktach PDF, niezależnie od kalibracji. Zapis: pdf-lib i osadzony DejaVu Sans; transformacja odwraca viewport PDF.js, uwzględniając obrót, CropBox i UserUnit. PDF nigdy nie trafia do ODA.

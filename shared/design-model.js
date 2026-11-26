@@ -76,6 +76,7 @@ export function validateDesign(design){
   if(design.settings.cadColorMode!==undefined&&!['original','white'].includes(design.settings.cadColorMode))fail();
   if(design.settings.cadLineWeight!==undefined&&![18,25,35,50,70].includes(design.settings.cadLineWeight))fail();
   if(design.settings.cadCableWidth!==undefined&&(!Number.isFinite(design.settings.cadCableWidth)||design.settings.cadCableWidth<0||design.settings.cadCableWidth>1e9))fail();
+  if(design.settings.pdfMetersPerPoint!==undefined&&(!Number.isFinite(design.settings.pdfMetersPerPoint)||design.settings.pdfMetersPerPoint<1e-10||design.settings.pdfMetersPerPoint>1e6))fail();
   return copy(design);
 }
 export function translateObject(object,dx,dy){

@@ -7,7 +7,9 @@ import { bindPanGesture } from './pan-gesture.js';
 import { dxfForViewer } from './dxf-encoding.js';
 import { Designer } from './designer.js';
 import { suggestCadTextHeight, suggestCadCableWidth, CAD_LINE_WEIGHTS } from '../shared/cad-export.js';
+import {pdfPageKey,calibrationFactor,METERS_PER_PDF_POINT,pdfLength} from '../shared/pdf-model.js';
 import './style.css';
+import './pdf.css';
 
 const $ = id => document.getElementById(id);
 const icons = {
@@ -23,6 +25,7 @@ const icons = {
 };
 document.querySelectorAll('[data-icon]').forEach(el => { el.innerHTML = `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${icons[el.dataset.icon]}</svg>`; });
 
+let pdf=null,pdfHash='',pdfPageNumber=1,calibrationPoints=[],lastPdfFactor;
 let source, sourceBytes, designer, fileName = '', mode = 'pan', pointer = null, snapped = null, exportBusy=false;
 const session = new MeasurementSession(), measurements = session.paths;
 let unitDetection = detectDrawingUnits();
@@ -42,18 +45,30 @@ const viewer = new CadViewer({
   onRenderStats: stats => { lastStats = stats; }
 });
 const format = (number, digits = 3) => new Intl.NumberFormat('pl-PL', { maximumFractionDigits: digits }).format(number);
-const unitLabel = () => drawingUnit === 'unit' ? 'j. rys.' : UNITS[displayUnit].label;
-const valueLabel = value => `${format(convert(value, drawingUnit, displayUnit))} ${unitLabel()}`;
+const pdfFactor=()=>pdf?designer?.state.settings.pdfMetersPerPoint:null;
+const unitLabel = () => pdf&&!pdfFactor()?'pkt PDF':drawingUnit === 'unit' ? 'j. rys.' : UNITS[displayUnit].label;
+const valueLabel = value => pdf?pdfLength(value,{...designer.state.settings,displayUnit}):`${format(convert(value, drawingUnit, displayUnit))} ${unitLabel()}`;
 function notice(message) { $('notice-text').textContent = message; $('notice').hidden = !message; }
 function status(message) { $('status').textContent = message; }
 function controls(enabled) { for (const id of ['measure','start-measure','design','export-cad','fit','zoom-in','zoom-out']) $(id).disabled = !enabled; }
 
 function rebuildSnaps() {
+  if(pdf){pointCount=0;snapQuery=()=>null;return;}
   const { points, truncated } = collectSnapPoints(viewer.getDocument());
   pointCount = points.length; snapQuery = buildSnapIndex(points);
   if (truncated) notice('Rysunek ma bardzo dużo geometrii. Przyciąganie obejmuje pierwsze 400 000 punktów; do pozostałych punktów można mierzyć ręcznie.');
 }
 function updateUnits() {
+  $('drawing-unit').disabled=Boolean(pdf);
+  if(pdf){
+    const factor=pdfFactor();lastPdfFactor=factor;drawingUnit=factor?'m':'unit';displayUnit=$('display-unit').value;
+    $('display-unit').disabled=!factor;$('unit-summary').textContent=factor?'PDF · '+UNITS[displayUnit].name.toLowerCase():'PDF · ustaw skalę';
+    $('unit-summary-source').textContent=factor?'Kalibracja tej strony':'Odległości w punktach PDF';
+    $('unit-note').textContent='Skalę PDF ustaw na pasku nad rysunkiem lub skalibruj znany odcinek.';
+    $('pdf-scale').value=factor?Number((factor/METERS_PER_PDF_POINT).toPrecision(8)):'';
+    $('pdf-scale-status').textContent=factor?'Skala ustawiona':'Ustaw skalę przed pomiarem';
+    renderMeasurements();designer?.renderProperties();drawOverlay();return;
+  }
   const selection=$('drawing-unit').value;
   drawingUnit=selection==='auto'?unitDetection.unit:selection;
   displayUnit=$('display-unit').value;
@@ -66,6 +81,8 @@ function updateUnits() {
   renderMeasurements(); designer?.renderProperties(); drawOverlay();
 }
 function renderLayers() {
+  $('layer-search').hidden=Boolean(pdf);
+  if(pdf){$('layer-count').textContent='PDF';$('layers').replaceChildren();const p=document.createElement('p');p.className='microcopy';p.textContent='Strona PDF jako podkład. Przyciąganie działa do dodanych kabli i symboli.';$('layers').append(p);return;}
   $('layer-count').textContent = Object.keys(source?.layers || {}).length;
   $('layers').replaceChildren();
   const filter = $('layer-search').value.toLocaleLowerCase('pl');
@@ -84,6 +101,7 @@ function renderLayers() {
   }
 }
 function resetDocument() {
+  pdf?.dispose();pdf=null;pdfHash='';lastPdfFactor=undefined;calibrationPoints=[];$('pdf-toolbar').hidden=true;$('pdf-underlay').hidden=true;$('export-cad').textContent='Zapisz DWG / DXF';$('export-cad').title='Zapisz nowy plik CAD z naniesionymi elementami (⌘S)';
   designer?.reset();
   document.body.classList.remove('has-drawing');
   source = undefined; sourceBytes=undefined; fileName = ''; session.clear(); pointer = null; snapped = null; unitDetection=detectDrawingUnits();
@@ -95,8 +113,9 @@ function resetDocument() {
   $('coordinates').textContent = 'X —   Y —'; document.title = 'DWG Desk';
 }
 async function openDrawing(fileOrData) {
+  if(busy||exportBusy){notice('Poczekaj na zakończenie bieżącej operacji.');return;}
   const name = fileOrData.name, size = fileOrData.size ?? fileOrData.bytes?.byteLength ?? 0;
-  if (!/\.(dwg|dxf)$/i.test(name)) { notice('Wybierz rysunek w formacie DWG lub DXF.'); return; }
+  if (!/\.(dwg|dxf|pdf)$/i.test(name)) { notice('Wybierz rysunek w formacie DWG, DXF lub PDF.'); return; }
   if (!size || size > 150 * 1024 * 1024) { notice('Rysunek jest pusty albo przekracza limit 150 MB.'); return; }
   try{await designer.flush(true);}catch(error){notice(`Nie można zmienić rysunku: zapis warstw nie powiódł się. ${error.message}`);return;}
   const token = ++generation; controller?.abort(); controller = new AbortController();
@@ -105,11 +124,17 @@ async function openDrawing(fileOrData) {
   try {
     const bytes=fileOrData instanceof File?new Uint8Array(await fileOrData.arrayBuffer()):new Uint8Array(fileOrData.bytes);
     const key=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
+    if(/\.pdf$/i.test(name)){
+      const {PdfUnderlay}=await import('./pdf-underlay.js');if(token!==generation)return;
+      pdf=new PdfUnderlay($('pdf-underlay'),viewer,drawOverlay,notice);pdfHash=key;sourceBytes=bytes;fileName=name;
+      await pdf.open(bytes,controller.signal);if(token!==generation)return;await showPdfPage(1,token);if(controller.signal.aborted)throw new DOMException("Otwieranie anulowane","AbortError");return;
+    }
     const result=await viewer.loadBuffer(dxfForViewer(bytes,name),name,{signal:controller.signal});
     if (token !== generation) return;
     source = restoreDxfLayers(result.document, result.raw); sourceBytes=bytes;fileName = name;
     viewer.setDocument(source, name);
     if (!source.entities.length) throw new Error('Nie znaleziono geometrii modelu 2D, którą można wyświetlić.');
+    $('drawing-label').textContent='MODEL · Widok 2D';
     $('filename').textContent = name; $('filename').title = name; document.title = `${name} — DWG Desk`;
     $('filemeta').textContent = `${result.format.toUpperCase()} · ${format(size / 1024, 0)} KB · ${format(source.entities.length,0)} obiektów`;
     document.body.classList.add('has-drawing');
@@ -138,7 +163,40 @@ async function chooseFile() {
   try { if (window.desktop) { const data = await window.desktop.open(); if (data) await openDrawing(data); } else $('file-input').click(); }
   catch (error) { notice(error.message); }
 }
+async function showPdfPage(number,token=generation){
+  const current=pdf,model=await current.setPage(number);if(token!==generation||pdf!==current)return;
+  source=model;pdfPageNumber=number;viewer.setDocument(source,fileName);session.clear();pointer=null;snapped=null;
+  await designer.load(await pdfPageKey(pdfHash,number),{drawingUnit:'unit',displayUnit:'m'});if(token!==generation)return;
+  $('display-unit').value=designer.state.settings.displayUnit;document.body.classList.add('has-drawing');
+  $('filename').textContent=fileName;$('filename').title=fileName;document.title=`${fileName} — DWG Desk`;
+  $('filemeta').textContent=`PDF · ${format(sourceBytes.length/1024,0)} KB · ${current.document.numPages} str.`;
+  $('empty').hidden=true;$('drawing-label').hidden=false;$('drawing-label').textContent=`PDF · strona ${number} z ${current.document.numPages}`;$('tool-hint').hidden=false;
+  $('pdf-toolbar').hidden=false;$('pdf-underlay').hidden=false;$('pdf-page').value=number;$('pdf-page').max=current.document.numPages;$('pdf-pages').textContent=current.document.numPages;
+  $('pdf-prev').disabled=number===1;$('pdf-next').disabled=number===current.document.numPages;
+  $('export-cad').textContent='Zapisz PDF';$('export-cad').title='Zapisz PDF z naniesionymi elementami na wszystkich stronach (⌘S)';
+  updateUnits();renderLayers();rebuildSnaps();controls(true);setMode('pan');viewer.renderer.fitToView(.86,'extents');drawOverlay();status(`PDF · strona ${number} z ${current.document.numPages}`);
+}
+async function changePdfPage(number){
+  if(!pdf||busy||exportBusy)return;if(!Number.isInteger(number)||number<1||number>pdf.document.numPages){$('pdf-page').value=pdfPageNumber;return;}
+  try{await designer.flush(true);}catch(e){notice(e.message);$('pdf-page').value=pdfPageNumber;return;}
+  busy=true;controls(false);$('loading').hidden=false;const previous=pdfPageNumber;
+  try{await showPdfPage(number);}catch(e){notice('Nie udało się otworzyć strony PDF: '+e.message);try{await showPdfPage(previous);}catch{resetDocument();}}finally{busy=false;$('loading').hidden=true;}
+}
+async function savePdf(){
+  if(!pdf||busy||exportBusy)return;exportBusy=true;controls(false);status('Zapisywanie PDF…');
+  try{
+    await designer.flush(true);const current=pdf,entries=[];
+    for(let number=1;number<=current.document.numPages;number++){
+      const design=number===pdfPageNumber?structuredClone(designer.state):await window.desktop.loadDesign(await pdfPageKey(pdfHash,number));
+      if(!design?.objects.length)continue;const page=await current.document.getPage(number),v=page.getViewport({scale:1});entries.push({number,design,viewport:{transform:v.transform,height:v.height}});
+    }
+    const {exportPdf}=await import('./pdf-export.js'),font=await fetch(new URL('pdf/DejaVuSans.ttf',document.baseURI));if(!font.ok)throw new Error('Brak fontu do zapisu PDF.');
+    const bytes=await exportPdf(sourceBytes,entries,new Uint8Array(await font.arrayBuffer()));
+    const result=await window.desktop.exportPdf({name:fileName,bytes,sourceBytes});status(result?`Zapisano ${result.fileName} · ${entries.reduce((n,e)=>n+e.design.objects.filter(o=>e.design.layers.find(l=>l.id===o.layerId).visible).length,0)} elementów projektu`:'Zapis PDF anulowany');
+  }catch(e){notice('Nie udało się zapisać PDF: '+e.message);status('PDF nie został zapisany');}finally{exportBusy=false;controls(Boolean(source));}
+}
 function updateHint(){
+  if(mode==='pdf-calibrate'){$('tool-hint').textContent=calibrationPoints.length?'Wskaż drugi koniec znanego odcinka · Esc: anuluj':'Wskaż pierwszy koniec znanego odcinka · Esc: anuluj';return;}
   $('tool-hint').textContent=mode!=='measure'?'Przeciągnij, aby przesunąć · przewijaj, aby przybliżyć':session.active?'Lewy: kolejny punkt · prawy / Enter: zakończ · ⌫: cofnij punkt':'Lewy: pierwszy punkt · prawy: zakończ · środkowy: przesuwaj';
 }
 function finishMeasurement(){
@@ -155,7 +213,7 @@ function setMode(next) {
   viewport.classList.toggle('measuring', mode === 'measure');
   viewport.classList.toggle('drawing', ['cable','symbol','point','text','flag'].includes(mode));
   updateHint(); renderMeasurements(); drawOverlay();
-  designer?.setMode(next);
+  designer?.setMode(next);if(next==='pdf-calibrate'){calibrationPoints=[];updateHint();}
 }
 function renderMeasurements() {
   const grandTotal=measurements.reduce((total,item)=>total+measurePath(item.points).total,0);
@@ -193,12 +251,15 @@ function updatePreviewTotal(){
 }
 function drawOverlay() {
   if (!ctx) return;
+  if(pdf&&lastPdfFactor!==pdfFactor()){updateUnits();return;}
   const width = viewport.clientWidth, height = viewport.clientHeight, dpr = window.devicePixelRatio || 1;
   if (overlay.width !== Math.round(width*dpr) || overlay.height !== Math.round(height*dpr)) { overlay.width = Math.round(width*dpr); overlay.height = Math.round(height*dpr); }
+  pdf?.draw(width,height,dpr);
   ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,width,height);
   if (!source) return;
   const screen = p => viewer.renderer.worldToScreen(p);
-  designer?.draw(ctx,{screen,light});
+  designer?.draw(ctx,{screen,light:pdf?true:light});
+  if(mode==='pdf-calibrate'&&calibrationPoints.length){const a=screen(calibrationPoints[0]),b=screen(pointer||calibrationPoints[0]);ctx.strokeStyle='#d52727';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();}
   const placed=[];
   function label(text,x,y,primary=false){
     if(x<0||y<0||x>width||y>height)return;
@@ -239,16 +300,16 @@ designer=new Designer({
   screen:p=>viewer.renderer.worldToScreen(p),scale:()=>viewer.renderer.getViewState().scale,canvas:()=>viewer.canvas,
   world:event=>{const r=viewer.canvas.getBoundingClientRect();return viewer.renderer.screenToWorld({x:event.clientX-r.left,y:event.clientY-r.top});},
   locate:event=>locate(event).point,formatLength:valueLabel,unitLabel,
-  toDisplay:value=>convert(value,drawingUnit,displayUnit),fromDisplay:value=>convert(value,displayUnit,drawingUnit),
-  metersToWorld:value=>drawingUnit==='unit'?value:convert(value,'m',drawingUnit)
+  toDisplay:value=>pdf?(pdfFactor()?convert(value*pdfFactor(),'m',displayUnit):value):convert(value,drawingUnit,displayUnit),fromDisplay:value=>pdf?(pdfFactor()?convert(value,displayUnit,'m')/pdfFactor():value):convert(value,displayUnit,drawingUnit),
+  metersToWorld:value=>pdf?(pdfFactor()?value/pdfFactor():value):drawingUnit==='unit'?value:convert(value,'m',drawingUnit)
 });
 const panGesture=bindPanGesture({
   element:viewport,getCanvas:()=>viewer.canvas,
-  canPan:event=>Boolean(source)&&!busy&&(event.button===1||mode==='pan'),
+  canPan:event=>Boolean(source)&&!busy&&!exportBusy&&(event.button===1||mode==='pan'),
   panBy:(x,y)=>viewer.renderer.panByScreenDelta(x,y)
 });
 viewport.addEventListener('pointermove', event => {
-  if (!source || busy) return;
+  if (!source || busy||exportBusy) return;
   const {point,snap} = locate(event); pointer = point; snapped = mode === 'measure' ? snap : null;
   designer.pointerMove(point,event);
   $('coordinates').textContent = `X ${format(point.x)}   Y ${format(point.y)}`;
@@ -256,7 +317,11 @@ viewport.addEventListener('pointermove', event => {
   updatePreviewTotal(); drawOverlay();
 }, true);
 viewport.addEventListener('pointerdown',event=>{
-  if(!source||busy||!event.target.closest('#viewer'))return;
+  if(!source||busy||exportBusy||!event.target.closest('#viewer'))return;
+  if(mode==='pdf-calibrate'){
+    event.preventDefault();event.stopPropagation();if(event.button===2){calibrationPoints=[];setMode('pan');return;}if(event.button!==0)return;
+    calibrationPoints.push(locate(event).point);if(calibrationPoints.length===2){if(measure(...calibrationPoints).distance<1e-8){calibrationPoints.pop();notice('Wybierz dwa różne punkty.');return;}$('pdf-distance').value='';$('pdf-calibration-error').textContent='';$('pdf-calibration-dialog').showModal();$('pdf-distance').focus();}updateHint();drawOverlay();return;
+  }
   document.activeElement?.blur();
   if(mode!=='measure'){if(designer.pointerDown(locate(event).point,event)){event.preventDefault();event.stopPropagation();}return;}
   if(event.button===2||(event.button===0&&event.ctrlKey)){
@@ -270,12 +335,17 @@ viewport.addEventListener('pointerdown',event=>{
 viewport.addEventListener('pointerleave',()=>{pointer=null;snapped=null;designer.pointerMove(null);updatePreviewTotal();drawOverlay();});
 viewport.addEventListener('contextmenu',event=>event.preventDefault());
 new ResizeObserver(drawOverlay).observe(viewport);
-$('pan').onclick = () => setMode('pan');
+$('pdf-prev').onclick=()=>changePdfPage(pdfPageNumber-1);$('pdf-next').onclick=()=>changePdfPage(pdfPageNumber+1);$('pdf-page').onchange=()=>changePdfPage(Number($('pdf-page').value));
+$('pdf-calibrate').onclick=()=>{if(pdf&&!busy&&!exportBusy)setMode('pdf-calibrate');};
+$('pdf-scale-apply').onclick=()=>{if(!pdf||busy||exportBusy)return;try{const factor=calibrationFactor(1,Number($('pdf-scale').value)*METERS_PER_PDF_POINT);designer.settingsChanged({pdfMetersPerPoint:factor});updateUnits();status('Skala PDF zapisana dla tej strony');}catch(e){notice(e.message);}};
+$('pdf-calibration-form').onsubmit=e=>{e.preventDefault();try{designer.settingsChanged({pdfMetersPerPoint:calibrationFactor(measure(...calibrationPoints).distance,Number($('pdf-distance').value))});$('pdf-calibration-dialog').close();calibrationPoints=[];setMode('pan');updateUnits();status('Skala PDF skalibrowana i zapisana');}catch(error){$('pdf-calibration-error').textContent=error.message;}};
+$('pdf-calibration-cancel').onclick=()=>{$('pdf-calibration-dialog').close();calibrationPoints=[];setMode('pan');};$('pdf-calibration-dialog').addEventListener('cancel',()=>{calibrationPoints=[];setMode('pan');});
+$('pan').onclick = () => {if(!busy&&!exportBusy)setMode('pan');};
 $('measure').onclick = $('start-measure').onclick = () => setMode('measure');
 $('design').onclick=()=>setMode('select');
 document.querySelectorAll('[data-panel]').forEach(b=>b.onclick=()=>{if(source)setMode(b.dataset.panel==='design'?'select':'measure');});
 $('save-project').onclick=async()=>{try{document.activeElement?.blur();await designer.flush(true);status('Projekt zapisany w DWG Desk · do innych programów: Zapisz DWG / DXF');}catch(error){notice(`Nie zapisano warstw: ${error.message}`);}};
-$('export-cad').onclick=()=>{if(source&&!busy&&!exportBusy){
+$('export-cad').onclick=()=>{if(pdf){savePdf();return;}if(source&&!busy&&!exportBusy){
   document.activeElement?.blur();const settings=designer.state.settings,height=settings.cadTextHeight??suggestCadTextHeight(designer.state,drawingUnit);
   $('cad-export-format').value=/\.dwg$/i.test(fileName)?'dwg':'dxf';$('cad-export-base').checked=true;
   $('cad-export-text-height').value=height;$('cad-export-text-unit').textContent=$('cad-export-width-unit').textContent=drawingUnit==='unit'?'j. rys.':drawingUnit;
@@ -307,23 +377,24 @@ $('zoom-in').onclick = () => viewer.zoomIn(); $('zoom-out').onclick = () => view
 $('layer-search').oninput = renderLayers;
 $('drawing-unit').onchange = $('display-unit').onchange = ()=>{updateUnits();designer.settingsChanged({drawingUnit:$('drawing-unit').value,displayUnit:$('display-unit').value});};
 $('snap').onchange = () => { $('snap-status').textContent = $('snap').checked ? 'PRZYCIĄGANIE WŁ.' : 'PRZYCIĄGANIE WYŁ.'; snapped = null; drawOverlay(); };
-$('theme').onclick = () => { light = !light; viewer.setCanvasOptions({ background:light ? '#f3f3ed' : '#10151b', foreground:light ? '#162b30' : '#e5ecef' }); drawOverlay(); };
+$('theme').onclick = () => { if(busy||exportBusy)return;const view=viewer.renderer.getViewState();light = !light; viewer.setCanvasOptions({ background:light ? '#f3f3ed' : '#10151b', foreground:light ? '#162b30' : '#e5ecef' }); viewer.renderer.setViewState(view);drawOverlay(); };
 $('clear').onclick = () => { session.clear(); updateHint(); renderMeasurements(); drawOverlay(); };
 $('finish-measure').onclick=finishMeasurement;
 $('undo-point').onclick=()=>{session.undo();updateHint();renderMeasurements();drawOverlay();};
 $('notice-close').onclick = () => notice('');
-$('cancel').onclick = () => controller?.abort();
+$('cancel').onclick = () => {controller?.abort();if(busy&&pdf){pdf.dispose();generation++;resetDocument();busy=false;$('loading').hidden=true;status('Otwieranie anulowane');}};
 $('export').onclick = async () => {
   if (!measurements.length) return;
   try {
-    const csv = measurementsCSV(measurements,drawingUnit,displayUnit);
+    const values=pdf&&pdfFactor()?measurements.map(m=>({...m,points:m.points.map(p=>({x:p.x*pdfFactor(),y:p.y*pdfFactor()}))})):measurements;
+    let csv = measurementsCSV(values,drawingUnit,displayUnit);if(pdf&&!pdfFactor())csv=csv.replaceAll('j. rys.','pkt PDF');
     if (window.desktop) { if (await window.desktop.saveCSV(csv)) status('Pomiary zapisane w CSV'); }
     else { const a = document.createElement('a'); a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv'})); a.download='pomiary.csv'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000); }
   } catch (error) { notice(`Nie udało się zapisać pomiarów. ${error.message}`); }
 };
 $('demo').onclick = async () => { try { const response=await fetch(new URL('demo.dxf',document.baseURI)); await openDrawing(new File([await response.arrayBuffer()],'Przykład — pracownia.dxf')); } catch (error) { notice(error.message); } };
 document.addEventListener('keydown', event => {
-  if(document.querySelector('dialog[open]'))return;
+  if(document.querySelector('dialog[open]')||busy||exportBusy)return;
   if (['INPUT','SELECT','TEXTAREA'].includes(event.target.tagName)) return;
   if(designer.keyDown(event))return;
   if(event.key==='Escape'){if(busy)controller?.abort();else if(session.active)finishMeasurement();else setMode('pan');}
@@ -342,11 +413,11 @@ document.addEventListener('dragleave',event => { event.preventDefault(); if (--d
 document.addEventListener('drop',async event => { event.preventDefault(); dragDepth=0;$('drop-overlay').hidden=true; const file=event.dataTransfer?.files[0]; if(file) await openDrawing(file); });
 window.desktop?.onDrawing(openDrawing); window.desktop?.onError(notice);
 window.desktop?.onAction(action => { if(action==='fit')viewer.fit('extents');if(action==='measure')setMode('measure');if(action==='export')$('export').click();if(action==='save-design')$('save-project').click();if(action==='export-cad')$('export-cad').click(); });
-window.addEventListener('beforeunload',event=>{document.activeElement?.blur();if(designer.dirty||designer.hasDraft){event.preventDefault();event.returnValue='';designer.flush(true).then(()=>window.desktop.finishClose()).catch(error=>notice(`Nie zapisano warstw. Okno pozostaje otwarte. ${error.message}`));}});
+window.addEventListener('beforeunload',event=>{if(exportBusy){event.preventDefault();event.returnValue='';notice('Poczekaj na zakończenie zapisu.');return;}document.activeElement?.blur();if(designer.dirty||designer.hasDraft){event.preventDefault();event.returnValue='';designer.flush(true).then(()=>window.desktop.finishClose()).catch(error=>notice(`Nie zapisano warstw. Okno pozostaje otwarte. ${error.message}`));}});
 window.desktop?.ready();
 // Read-only diagnostics used by the native Electron acceptance suite.
 Object.defineProperty(window, '__dwgDiagnostics', { value: Object.freeze({
-  state: () => ({ fileName, mode, busy, pointCount, drawingUnit, displayUnit, measurements:structuredClone(measurements), active:session.active?measurements.indexOf(session.active):null, unitDetection, entityCount:source?.entities.length || 0, stats:lastStats, header:source?.header, units:source?.units }),
+  state: () => ({ pdf:pdf?{page:pdfPageNumber,pages:pdf.document?.numPages,factor:pdfFactor(),width:pdf.viewport?.width,height:pdf.viewport?.height}:null,fileName, mode, busy, pointCount, drawingUnit, displayUnit, measurements:structuredClone(measurements), active:session.active?measurements.indexOf(session.active):null, unitDetection, entityCount:source?.entities.length || 0, stats:lastStats, header:source?.header, units:source?.units }),
   worldToScreen: point => viewer.renderer.worldToScreen(point),
   drawing:()=>structuredClone(viewer.getDocument()),
   snapPoints: () => source ? collectSnapPoints(viewer.getDocument()).points.slice(0,50) : [],

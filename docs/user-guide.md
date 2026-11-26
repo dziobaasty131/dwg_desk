@@ -128,3 +128,7 @@ Projekt z biblioteką i ustawieniami elementów zapisuje się na tym Macu automa
 | Shift podczas obracania kamery | Krok co 15°. |
 
 Skróty narzędzi nie działają podczas wpisywania tekstu w polach formularza. Zachowanie Esc zależy od aktywnego narzędzia, zgodnie z opisami powyżej.
+
+## Podkład PDF
+
+Wybierz PDF w oknie otwierania. Pasek PDF służy do wyboru strony i ustawienia skali. Po kalibracji działają te same pomiary, warstwy, kable, kamery i flagi długości. **Zapisz PDF / Cmd+S** tworzy dokument z naniesioną instalacją. [Pełna instrukcja PDF](pdf.md).

@@ -1,5 +1,13 @@
 # Historia zmian
 
+## 1.4.0 — 2026-11-26
+
+- PDF jako lokalny podkład: dokumenty wielostronicowe, skany, obrót i przycięcie stron.
+- Kalibracja znanym odcinkiem lub skalą 1:N, zapisywana osobno dla każdej strony.
+- Dotychczasowe narzędzia pomiarów i projektowania działają na PDF; strony zachowują własne warstwy i obiekty.
+- Zapis PDF przez Cmd+S zachowuje wszystkie strony i nanosi widoczne elementy, bez konwertera ODA.
+- Osadzanie fontu z polskimi znakami, ochrona oryginalnego PDF i kontrola zapisu poza aplikacją.
+
 ## 1.3.3 — 2026-10-20
 
 - Eksport z opcją **Czytelne na białym tle**, domyślnie przyciemniającą jasne kolory instalacji. Można zachować dokładne kolory z projektu.

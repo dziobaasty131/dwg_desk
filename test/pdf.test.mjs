@@ -1,0 +1,18 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {readFile,mkdtemp,writeFile,rm,symlink} from 'node:fs/promises';import os from 'node:os';import path from 'node:path';
+import {calibrationFactor,pageToPdfMatrix,pdfPageKey,pdfLength} from '../shared/pdf-model.js';
+import {newDesign,validateDesign,copy} from '../shared/design-model.js';import {PDFDocument} from 'pdf-lib';import {exportPdf} from '../src/pdf-export.js';import storage from '../electron/pdf-save.cjs';import files from '../electron/files.cjs';
+const fixture=await readFile(new URL('./fixtures/pdf-plan.pdf',import.meta.url));
+test('PDF calibration gives true lengths while retaining stable page coordinates',()=>{const factor=calibrationFactor(200,10);assert.equal(factor,.05);assert.equal(pdfLength(200,{pdfMetersPerPoint:factor,displayUnit:'m'}),'10 m');assert.equal(pdfLength(200,{displayUnit:'m'}),'200 pkt PDF');for(const [d,m] of [[0,10],[100,0],[NaN,1],[100,-1]])assert.throws(()=>calibrationFactor(d,m));});
+test('PDF pages use distinct stable project keys and validate persisted calibration',async()=>{const hash='a'.repeat(64);assert.equal(await pdfPageKey(hash,1),await pdfPageKey(hash,1));assert.notEqual(await pdfPageKey(hash,1),await pdfPageKey(hash,2));const d=newDesign();d.settings.pdfMetersPerPoint=.05;assert.doesNotThrow(()=>validateDesign(d));for(const x of [0,-1,NaN,Infinity,'1']){const bad=copy(d);bad.settings.pdfMetersPerPoint=x;assert.throws(()=>validateDesign(bad));}});
+test('PDF coordinates account for crop origins, all page rotations and UserUnit',()=>{
+ const cases=[[[1,0,0,-1,-50,360],320,[1,0,0,1,50,40]],[[0,1,1,0,-40,-50],500,[0,1,-1,0,550,40]],[[-1,0,0,1,550,-40],320,[-1,0,0,-1,550,360]],[[0,-1,-1,0,360,550],500,[0,-1,1,0,50,360]],[[2,0,0,-2,-100,720],640,[.5,0,0,.5,50,40]]];
+ for(const [transform,height,want] of cases)assert.deepEqual(pageToPdfMatrix({transform,height}).map(x=>x||0),want);assert.throws(()=>pageToPdfMatrix({transform:[0,0,0,0,0,0],height:1}));
+});
+test('native PDF read and atomic save reject invalid files and protect original drawings',async()=>{
+ const dir=await mkdtemp(path.join(os.tmpdir(),'dwg-pdf-test-'));try{const file=path.join(dir,'plan.pdf');await writeFile(file,fixture);assert.equal((await files.readDrawing(file)).name,'plan.pdf');await assert.rejects(storage.savePdf(file,{bytes:fixture,sourceBytes:fixture}),/oryginalnego/);const alias=path.join(dir,'alias.pdf');await symlink(file,alias);await assert.rejects(storage.savePdf(alias,{bytes:fixture,sourceBytes:fixture}));const wrong=path.join(dir,'wrong.pdf');await writeFile(wrong,'not PDF');await assert.rejects(files.readDrawing(wrong),/nagłówka/);assert.throws(()=>storage.pdfBytes('fake'));assert.deepEqual(await readFile(file),fixture);}finally{await rm(dir,{recursive:true,force:true});}
+});
+test('PDF export preserves all pages and rotation, embeds Unicode labels and leaves source unchanged',async()=>{
+ const d=newDesign();d.settings.pdfMetersPerPoint=.05;d.settings.displayUnit='m';d.objects.push({id:'p',kind:'text',layerId:'points',name:'Żółć — kamera Łódź',position:{x:100,y:200},size:10,rotation:0});
+ const bytes=await exportPdf(fixture,[{number:2,design:d,viewport:{transform:[0,1,1,0,-40,-50],height:500}}],await readFile(new URL('../node_modules/dejavu-fonts-ttf/ttf/DejaVuSans.ttf',import.meta.url)));
+ const result=await PDFDocument.load(bytes);assert.equal(result.getPageCount(),2);assert.equal(result.getPage(1).getRotation().angle,90);assert.deepEqual(result.getPage(1).getCropBox(),{x:50,y:40,width:500,height:320});assert.deepEqual(await readFile(new URL('./fixtures/pdf-plan.pdf',import.meta.url)),fixture);
+});

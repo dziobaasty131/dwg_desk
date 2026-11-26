@@ -1,9 +1,9 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const MAX_BYTES = 150 * 1024 * 1024;
-const isDrawing = value => typeof value === 'string' && /\.(dwg|dxf)$/i.test(value);
+const isDrawing = value => typeof value === 'string' && /\.(dwg|dxf|pdf)$/i.test(value);
 async function readDrawing(file) {
-  if (!isDrawing(file)) throw new Error('Wybierz plik DWG lub DXF.');
+  if (!isDrawing(file)) throw new Error('Wybierz plik DWG, DXF lub PDF.');
   const handle = await fs.open(file, 'r');
   try {
     const stat = await handle.stat();
@@ -11,6 +11,7 @@ async function readDrawing(file) {
     if (stat.size > MAX_BYTES) throw new Error('Limit rozmiaru rysunku wynosi 150 MB.');
     const bytes = await handle.readFile();
     if (bytes.length > MAX_BYTES) throw new Error('Limit rozmiaru rysunku wynosi 150 MB.');
+    if(/\.pdf$/i.test(file)&&!bytes.subarray(0,1024).includes(Buffer.from('%PDF-')))throw new Error('Plik nie ma nagłówka PDF.');
     return { name: path.basename(file), bytes };
   } finally { await handle.close(); }
 }

@@ -9,3 +9,7 @@ Pliki są niezmienionymi kopiami publicznych fixture z [LibreDWG](https://github
 | `TS1-2000.dwg` | [2000/TS1.dwg](https://github.com/LibreDWG/libredwg/blob/master/test/test-data/2000/TS1.dwg) | `590b56463be7b2cb39e25ffec567c07cd2536d32` |
 
 Informacje o licencji projektu źródłowego: [LibreDWG COPYING](https://github.com/LibreDWG/libredwg/blob/master/COPYING). Te pliki służą do regresji odczytu i renderowania; nie są projektami użytkownika DWG Desk.
+
+## pdf-plan.pdf
+
+Syntetyczny fixture wygenerowany na potrzeby DWG Desk: plan wektorowy z odcinkiem odniesienia 10 m oraz druga strona ze sztucznym skanem, obrotem 90° i CropBox. Nie pochodzi z plików użytkownika i nie zawiera danych klienta.
